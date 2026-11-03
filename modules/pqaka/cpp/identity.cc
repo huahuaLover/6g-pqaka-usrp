@@ -1,0 +1,14 @@
+#include "identity.h"
+#include <mbedtls/aes.h>
+#include <mbedtls/sha256.h>
+#include <stdexcept>
+namespace pqaka {
+static void invalid(){throw std::invalid_argument("identity protection input or verification failed");}
+Bytes encode_msin(const std::string& s){if(s.empty()||s.size()>10)invalid();Bytes p((s.size()+1)/2,0);for(size_t i=0;i<s.size();i++){if(s[i]<'0'||s[i]>'9')invalid();p[i/2]|=(s[i]-'0')<<(4*(i%2));}if(s.size()%2)p.back()|=0xf0;return p;}
+std::string decode_msin(const Bytes& p){if(p.empty()||p.size()>5)invalid();std::string s;for(size_t i=0;i<p.size();i++){auto lo=p[i]&15,hi=p[i]>>4;if(lo>9)invalid();s+=char('0'+lo);if(hi==15&&i==p.size()-1)break;if(hi>9)invalid();s+=char('0'+hi);}return s;}
+IdentityKeys derive_draft_identity_keys(const Bytes& ks,const Bytes& c){if(ks.size()!=32||c.size()!=768)invalid();std::string label="6G-PQAKA-SUCI";Bytes m;for(uint8_t n=1;n<=2;n++){Bytes in=ks;in.insert(in.end(),{0,0,0,n});in.insert(in.end(),label.begin(),label.end());in.insert(in.end(),c.begin(),c.end());Bytes out(32);if(mbedtls_sha256_ret(in.data(),in.size(),out.data(),0)!=0)throw std::runtime_error("SHA256 failed");m.insert(m.end(),out.begin(),out.end());}return {Bytes(m.begin(),m.begin()+16),Bytes(m.begin()+16,m.begin()+32),Bytes(m.begin()+32,m.end())};}
+Bytes identity_ctr(const Bytes& key,const Bytes& icb,const Bytes& p){if(key.size()!=16||icb.size()!=16||uint64_t(p.size())>(uint64_t(1)<<36))invalid();mbedtls_aes_context aes;mbedtls_aes_init(&aes);if(mbedtls_aes_setkey_enc(&aes,key.data(),128)!=0){mbedtls_aes_free(&aes);throw std::runtime_error("AES key failed");}Bytes counter=icb,stream(16),out(p.size());for(size_t off=0;off<p.size();off+=16){if(mbedtls_aes_crypt_ecb(&aes,MBEDTLS_AES_ENCRYPT,counter.data(),stream.data())!=0){mbedtls_aes_free(&aes);throw std::runtime_error("AES failed");}for(size_t j=0;j<16&&off+j<p.size();j++)out[off+j]=p[off+j]^stream[j];for(int i=15;i>=12;i--)if(++counter[i]!=0)break;}mbedtls_aes_free(&aes);return out;}
+static Bytes tag_for(const Bytes& km,const Bytes& c,const Bytes& ct){std::string label="6G-PQAKA-SUCI";Bytes in(label.begin(),label.end());in.insert(in.end(),c.begin(),c.end());in.insert(in.end(),ct.begin(),ct.end());auto tag=hmac_sha256(km,in);tag.resize(8);return tag;}
+ProtectedIdentity protect_draft_identity(const Bytes& ks,const Bytes& c,const std::string& s){auto p=encode_msin(s);auto k=derive_draft_identity_keys(ks,c);auto ct=identity_ctr(k.ke,k.icb,p);return {ct,tag_for(k.km,c,ct)};}
+std::string recover_draft_identity(const Bytes& ks,const Bytes& c,const Bytes& ct,const Bytes& tag){if(ct.empty()||ct.size()>5||tag.size()!=8)invalid();auto k=derive_draft_identity_keys(ks,c);auto expected=tag_for(k.km,c,ct);volatile uint8_t diff=0;for(size_t i=0;i<8;i++)diff|=tag[i]^expected[i];if(diff)invalid();return decode_msin(identity_ctr(k.ke,k.icb,ct));}
+}

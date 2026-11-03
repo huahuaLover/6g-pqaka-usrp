@@ -1,0 +1,48 @@
+# Copy to ue-b210.local.conf; fill private subscription and hardware values.
+# Gains are initial values only; confirm RF attenuation/power budget first.
+[rf]
+freq_offset = 0
+tx_gain = 0
+rx_gain = 40
+srate = 23.04e6
+nof_antennas = 1
+device_name = uhd
+device_args = type=b200,serial=REPLACE_B210_SERIAL,clock=internal
+# Timing advance requires RF validation; not copied blindly from another device.
+
+[rat.eutra]
+nof_carriers = 0
+[rat.nr]
+bands = 3
+nof_carriers = 1
+max_nof_prb = 106
+nof_prb = 106
+[rrc]
+release = 15
+ue_category = 4
+[usim]
+mode = soft
+algo = milenage
+opc = REPLACE_OPC_32_HEX
+k = REPLACE_K_32_HEX
+imsi = REPLACE_IMSI
+imei = REPLACE_IMEI
+[nas]
+apn = internet
+apn_protocol = ipv4
+[slicing]
+enable = true
+nssai-sst = 1
+nssai-sd = 66051
+[gw]
+netns = pqaka-ue
+ip_devname = tun_srsue
+ip_netmask = 255.255.0.0
+[log]
+all_level = warning
+gw_level = warning
+pdcp_level = warning
+nas_level = info
+filename = logs/ue.log
+[pcap]
+enable = none

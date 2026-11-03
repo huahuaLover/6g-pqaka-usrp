@@ -1,0 +1,7 @@
+/artifacts/
+/sources/liboqs/
+/secrets/
+/logs/
+/config/*.local.*
+**/__pycache__/
+*.pyc
